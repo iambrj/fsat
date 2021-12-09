@@ -5,7 +5,7 @@
 using namespace std;
 
 const int NAMELEN = 4;
-const char *KERNAL_NAME = "kernal.c";
+const char *KERNAL_NAME = "kernal.cpp";
 
 class Builder {
   public:
@@ -63,7 +63,6 @@ void Builder::genC() {
     exit(0);
   }
 
-  fout << "#include <stdbool.h>\n\n";
   for(int i = 1; i <= var_cnt; i++) {
     fout << "bool circuit_" << varn(i) << "(";
     bool isFirst = true;

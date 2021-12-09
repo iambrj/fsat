@@ -1,9 +1,60 @@
+#define CL_HPP_CL_1_2_DEFAULT_BUILD
+#define CL_HPP_TARGET_OPENCL_VERSION 120
+#define CL_HPP_MINIMUM_OPENCL_VERSION 120
+#define CL_HPP_ENABLE_PROGRAM_CONSTRUCTION_FROM_ARRAY_COMPATIBILITY 1
+#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
+
+#include <unistd.h>
+
+#include <CL/cl2.hpp>
 #include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <vector>
 
 using namespace std;
+
+std::vector<cl::Device> get_xilinx_devices() {
+  size_t i;
+  cl_int err;
+  std::vector<cl::Platform> platforms;
+  err = cl::Platform::get(&platforms);
+  cl::Platform platform;
+  for (i = 0; i < platforms.size(); i++) {
+    platform = platforms[i];
+    std::string platformName = platform.getInfo<CL_PLATFORM_NAME>(&err);
+    if (platformName == "Xilinx") {
+      std::cout << "INFO: Found Xilinx Platform" << std::endl;
+      break;
+    }
+  }
+  if (i == platforms.size()) {
+    std::cout << "ERROR: Failed to find Xilinx platform" << std::endl;
+    exit(EXIT_FAILURE);
+  }
+
+  // Getting ACCELERATOR Devices and selecting 1st such device
+  std::vector<cl::Device> devices;
+  err = platform.getDevices(CL_DEVICE_TYPE_ACCELERATOR, &devices);
+  return devices;
+}
+
+char *read_binary_file(const std::string &xclbin_file_name, unsigned &nb) {
+  if (access(xclbin_file_name.c_str(), R_OK) != 0) {
+    printf("ERROR: %s xclbin not available please build\n",
+           xclbin_file_name.c_str());
+    exit(EXIT_FAILURE);
+  }
+  // Loading XCL Bin into char buffer
+  std::cout << "INFO: Loading '" << xclbin_file_name << "'\n";
+  std::ifstream bin_file(xclbin_file_name.c_str(), std::ifstream::binary);
+  bin_file.seekg(0, bin_file.end);
+  nb = bin_file.tellg();
+  bin_file.seekg(0, bin_file.beg);
+  char *buf = new char[nb];
+  bin_file.read(buf, nb);
+  return buf;
+}
 
 enum Status {
   Solved,
@@ -17,6 +68,14 @@ class SATInstance {
   vector<int> vars = {};
   vector<vector<int>> clauses = {};
 
+  int *in, *out;
+  cl::Kernel *krnl;
+  cl::Buffer *in_buf, *out_buf;
+  cl::CommandQueue *q;
+
+  void runKrnl();
+  void runStuff();
+
   void read(string infile);
   Status solve();
   Status backtrack();
@@ -28,9 +87,7 @@ class SATInstance {
   void printClauses();
 };
 
-static int mod(int x) {
-  return x < 0? -x : x;
-}
+static int mod(int x) { return x < 0 ? -x : x; }
 
 void SATInstance::read(string infile) {
   ifstream fin(infile);
@@ -68,6 +125,7 @@ Status SATInstance::solve() {
 }
 
 Status SATInstance::backtrack() {
+  runStuff();
   vector<int> implied = resolveImplications();
   if (conflictExists()) {
     // Current (partial) assignment causes conflict, undo implications and
@@ -162,14 +220,91 @@ void SATInstance::printClauses() {
   }
 }
 
-int main(int argc, char* argv[]) {
-  if (argc != 2) {
-    cerr << "Error: incorrect usage. Expected: ./a.out filename.cnf" << endl;
+void SATInstance::runKrnl() {
+  // Schedule transfer of inputs to device memory, execution of kernel, and
+  // transfer of outputs back to host memory
+  q->enqueueMigrateMemObjects({*in_buf}, 0 /* 0 means from host*/);
+  q->enqueueTask(*krnl);
+  q->enqueueMigrateMemObjects({*out_buf}, CL_MIGRATE_MEM_OBJECT_HOST);
+
+  // Wait for all scheduled operations to finish
+  q->finish();
+}
+
+void SATInstance::runStuff() {
+  for (unsigned i = 0, e = vars.size(); i < e; ++i) in[i] = vars[i];
+  for (unsigned i = 0, e = vars.size(); i < e; ++i) cout << in[i] << " ";
+  cout << "\n";
+  runKrnl();
+  for (unsigned i = 0, e = vars.size(); i < e; ++i) cout << out[i] << " ";
+  cout << "\n";
+}
+
+int main(int argc, char *argv[]) {
+  if (argc != 4) {
+    cerr << "Error: incorrect usage. Expected: ./a.out kernal_file kernal_name "
+            "filename.cnf"
+         << endl;
     exit(0);
   }
 
   SATInstance s;
-  s.read(argv[1]);
+  s.read(argv[3]);
+  cerr << "Loaded SAT\n";
+
+  // ------------------------------------------------------------------------------------
+  // Step 1: Initialize the OpenCL environment
+  // ------------------------------------------------------------------------------------
+  cl_int err;
+  std::string binaryFile = argv[1];
+  unsigned fileBufSize;
+  std::vector<cl::Device> devices = get_xilinx_devices();
+  devices.resize(1);
+  cl::Device device = devices[0];
+  cl::Context context(device, NULL, NULL, NULL, &err);
+  char *fileBuf = read_binary_file(binaryFile, fileBufSize);
+  cl::Program::Binaries bins{{fileBuf, fileBufSize}};
+  cl::Program program(context, devices, bins, NULL, &err);
+  cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE, &err);
+  cl::Kernel krnl(program, argv[2], &err);
+
+  // ------------------------------------------------------------------------------------
+  // Step 2: Create buffers and initialize test values
+  // ------------------------------------------------------------------------------------
+  // Create the buffers and allocate memory
+  cl::Buffer in_buf(context, CL_MEM_READ_ONLY, sizeof(int) * s.vars.size(),
+                    NULL, &err);
+  cl::Buffer out_buf(context, CL_MEM_WRITE_ONLY, sizeof(int) * s.vars.size(),
+                     NULL, &err);
+
+  // Map buffers to kernel arguments, thereby assigning them to specific device
+  // memory banks
+  krnl.setArg(0, in_buf);
+  krnl.setArg(1, out_buf);
+
+  // Map host-side buffer memory to user-space pointers
+  int *in = (int *)q.enqueueMapBuffer(in_buf, CL_TRUE, CL_MAP_READ, 0,
+                                      sizeof(int) * s.vars.size());
+  int *out = (int *)q.enqueueMapBuffer(out_buf, CL_TRUE, CL_MAP_WRITE, 0,
+                                       sizeof(int) * s.vars.size());
+
+  // ------------------------------------------------------------------------------------
+  // Step 3: Run the kernel
+  // ------------------------------------------------------------------------------------
+  // Set kernel arguments
+  krnl.setArg(0, in_buf);
+  krnl.setArg(1, out_buf);
+  krnl.setArg(2, s.var_cnt);
+
+  s.in = in;
+  s.out = out;
+  s.krnl = &krnl;
+  s.q = &q;
+  s.in_buf = &in_buf;
+  s.out_buf = &out_buf;
+
+  cerr << "solving now\n";
+
   if (s.solve() == Solved)
     s.printSol();
   else

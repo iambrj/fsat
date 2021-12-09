@@ -10,4 +10,4 @@ create_kernal:
 kernal: builder create_kernal
 
 clean:
-	rm builder host kernal.c
+	rm -f builder host kernal.c
