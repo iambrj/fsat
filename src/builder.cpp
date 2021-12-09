@@ -5,7 +5,7 @@
 using namespace std;
 
 const int NAMELEN = 4;
-const char *KERNAL_NAME = "kernal.cpp";
+const char *KERNAL_NAME = "generated_kernal.cpp";
 
 class Builder {
   public:

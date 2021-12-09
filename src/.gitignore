@@ -1,4 +1,5 @@
-kernal.c
 builder
 host
+naive
+kernal_test
 *.out
