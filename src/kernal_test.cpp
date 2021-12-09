@@ -5,7 +5,7 @@
 
 using namespace std;
 
-void kernal(int *in, int *clauses, int *out, bool *conflict, int var_cnt,
+void kernal(int *clauses, int *out, bool *conflict, int var_cnt,
             int clause_cnt);
 
 enum Status {
@@ -72,7 +72,7 @@ Status SATInstance::solve() {
 Status SATInstance::backtrack() {
   vector<int> curr = vars;
   bool conflict;
-  kernal(curr.data(), clauses.data(), vars.data(), &conflict, var_cnt, clause_cnt);
+  kernal(clauses.data(), vars.data(), &conflict, var_cnt, clause_cnt);
   if (conflict) {
     // Current (partial) assignment causes conflict, undo implications and
     // backtrack
