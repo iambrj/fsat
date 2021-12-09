@@ -165,7 +165,7 @@ void SATInstance::genC(string fname) {
     exit(0);
   }
   for(int i = 1; i <= var_cnt; i++) {
-    fout << "bool " << varn(i) << "(";
+    fout << "bool circuit_" << varn(i) << "(";
     bool isFirst = true;
     for(int j = 1; j <= var_cnt; j++) {
       if(i != j) {
