@@ -7,10 +7,10 @@ create_kernal:
 kernal: builder create_kernal
 
 kernal_test:
-	clang++ -g kernal_test.cpp kernal.cpp -o kernal_test
+	clang++ -O3 kernal_test.cpp kernal.cpp -o kernal_test
 
 naive:
-	clang++ -g naive.cpp -o naive
+	clang++ -O3 naive.cpp -o naive
 
 testing: kernal_test naive
 

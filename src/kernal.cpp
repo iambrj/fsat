@@ -77,4 +77,5 @@ void kernal(int *clauses, int *out, bool *conflict, int var_cnt,
       return;
     }
   }
+  *conflict = false;
 }
