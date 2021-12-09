@@ -2,12 +2,9 @@
 #include <vector>
 #include <algorithm>
 #include <fstream>
+#include "./utils.h"
 
 using namespace std;
-
-int mod(int x) {
-  return x < 0? -x : x;
-}
 
 enum Status {
   Solved,
@@ -30,6 +27,7 @@ class SATInstance {
     int selectVar();
     void printSol();
     void printClauses();
+    void genC(string fname = "");
 };
 
 void SATInstance::read(string infile) {
@@ -155,6 +153,56 @@ void SATInstance::printClauses() {
   }
 }
 
+string varn(int i) {
+  return "v" + to_string(i);
+}
+
+void SATInstance::genC(string fname) {
+  if(fname == "") fname = gen_random(NAMELEN) + "_" + to_string(var_cnt) + "_" + to_string(clause_cnt);
+  ofstream fout(fname);
+  if(!fout.is_open()) {
+    cerr << "Error: couldn't open file " << fname << endl;
+    exit(0);
+  }
+  for(int i = 1; i <= var_cnt; i++) {
+    fout << "bool " << varn(i) << "(";
+    bool isFirst = true;
+    for(int j = 1; j <= var_cnt; j++) {
+      if(i != j) {
+        if(!isFirst) fout << ", ";
+        else isFirst = false;
+        fout << "bool " << varn(j);
+      }
+    }
+    fout << ") {\n\treturn ";
+    for(auto clause : clauses) {
+      bool clauseHasVari = false;
+      for(auto var : clause)
+        if(mod(var) == i) {
+          clauseHasVari = true;
+          break;
+        }
+      if(!clauseHasVari) continue;
+      isFirst = true;
+      for(int j = 0; j < clause.size(); j++) {
+        int var = clause[j];
+        if(mod(var) != i) {
+          if(!isFirst) fout << " && ";
+          else {
+            fout << "(";
+            isFirst = false;
+          }
+          if(var < 0) fout << varn(-var);
+          else fout << "!" << varn(var);
+        }
+        if(j && j % 10 == 0) fout << "\n\t\t";
+      }
+      if(!isFirst) fout << ") || ";
+    }
+    fout << "false;\n}\n";
+  }
+}
+
 int main(int argc, char* argv[]) {
   if(argc != 2) {
     cerr << "Error: incorrect usage. Expected: ./a.out filename.cnf" << endl;
@@ -162,8 +210,9 @@ int main(int argc, char* argv[]) {
   }
   SATInstance s;
   s.read(argv[1]);
-  if(s.solve() == Solved)
-    s.printSol();
-  else cout << "UNSATISFIABLE" << endl;
+  // if(s.solve() == Solved)
+  //   s.printSol();
+  // else cout << "UNSATISFIABLE" << endl;
+  s.genC();
   return 0;
 }
