@@ -3,7 +3,7 @@
 // var_cnt -> read_only
 // clause_cnt -> read_only
 // conflict -> write only
-void kernal(int *clauses, int *out, bool *conflict, int var_cnt,
+void kernal(int *clauses, int *out, int var_cnt,
             int clause_cnt) {
 
   // Resolve implications.
@@ -37,7 +37,7 @@ void kernal(int *clauses, int *out, bool *conflict, int var_cnt,
         int other2 = v[(j + 2) % 3] ^ !sign[(j + 2) % 3];
 
         // Implication yay.
-        if (!other1 && !other2) { 
+        if (!other1 && !other2) {
           out[var[j]] = 1 ^ !sign[j];
           changed = true;
         };
@@ -73,9 +73,9 @@ void kernal(int *clauses, int *out, bool *conflict, int var_cnt,
 
     // Check conflict.
     if (!(v[0] || v[1] || v[2])) {
-      *conflict = true;
+      out[0] = 1;
       return;
     }
   }
-  *conflict = false;
+  out[0] = 0;
 }
